@@ -142,22 +142,40 @@ app.post("/wod-content", async (req, res) => {
       "crossfit_content",
     ];
 
-    const metafieldContent = (metafieldsData.metafields || [])
-      .filter((field) => contentKeys.includes(field.key))
-      .map((field) => richTextToHtml(field.value))
-      .filter(Boolean)
-      .join("\n");
+    // const metafieldContent = (metafieldsData.metafields || [])
+    //   .filter((field) => contentKeys.includes(field.key))
+    //   .map((field) => richTextToHtml(field.value))
+    //   .filter(Boolean)
+    //   .join("\n");
 
-    const contentHtml = article.body_html || metafieldContent;
+    const programs = [];
+
+    for (const field of metafieldsData.metafields) {
+      if (!contentKeys.includes(field.key)) continue;
+
+      programs.push({
+        title: field.key
+          .replace("_content", "")
+          .replace("crossfit", "CrossFit")
+          .replace("hyrox", "HYROX")
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+
+        html: richTextToHtml(field.value),
+      });
+    }
+
+    // const contentHtml = article.body_html || metafieldContent;
 
     return res.json({
       allowed: true,
       article: {
         title: article.title,
         id: article.id,
-        body_html: contentHtml,
+        // body_html: contentHtml,
         image: article.image?.src || null,
         published_at: article.published_at,
+        programs
       },
     });
   } catch (error) {
