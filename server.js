@@ -13,6 +13,48 @@ app.use(
   }),
 );
 
+function richTextToHtml(input) {
+  let doc;
+
+  try {
+    doc = typeof input === "string" ? JSON.parse(input) : input;
+  } catch {
+    return input || "";
+  }
+
+  function renderNode(node) {
+    if (!node) return "";
+
+    if (node.type === "root") {
+      return (node.children || []).map(renderNode).join("");
+    }
+
+    if (node.type === "paragraph") {
+      return `<p>${(node.children || []).map(renderNode).join("")}</p>`;
+    }
+
+    if (node.type === "text") {
+      let value = node.value || "";
+      if (node.bold) value = `<strong>${value}</strong>`;
+      if (node.italic) value = `<em>${value}</em>`;
+      return value;
+    }
+
+    if (node.type === "list") {
+      const tag = node.listType === "ordered" ? "ol" : "ul";
+      return `<${tag}>${(node.children || []).map(renderNode).join("")}</${tag}>`;
+    }
+
+    if (node.type === "list-item") {
+      return `<li>${(node.children || []).map(renderNode).join("")}</li>`;
+    }
+
+    return "";
+  }
+
+  return renderNode(doc);
+}
+
 app.post("/check-password", (req, res) => {
   const { password } = req.body;
 
@@ -42,78 +84,94 @@ app.get("/health", (req, res) => {
 
 const port = process.env.PORT || 3000;
 
-app.listen(port, () => {
-  console.log(`WOD auth server running on port ${port}`);
+app.post("/wod-content", async (req, res) => {
+  try {
+    const { password, handle } = req.body;
+
+    if (password !== process.env.WOD_PASSWORD) {
+      return res
+        .status(401)
+        .json({ allowed: false, message: "Incorrect password" });
+    }
+
+    const url =
+      `https://${process.env.SHOPIFY_STORE_DOMAIN}` +
+      `/admin/api/2026-01/blogs/${process.env.SHOPIFY_BLOG_ID}/articles.json` +
+      `?handle=${encodeURIComponent(handle)}`;
+
+    console.log("Fetching Shopify URL:", url);
+
+    const shopifyRes = await fetch(url, {
+      headers: {
+        "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_TOKEN,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const data = await shopifyRes.json();
+
+    console.log("Shopify response:", JSON.stringify(data, null, 2));
+    const article = data.articles?.[0];
+
+    if (!article) {
+      return res.status(404).json({
+        allowed: false,
+        message: "Article not found",
+        shopifyResponse: data,
+      });
+    }
+
+    const metafieldsUrl =
+      `https://${process.env.SHOPIFY_STORE_DOMAIN}` +
+      `/admin/api/2026-01/articles/${article.id}/metafields.json`;
+
+    const metafieldsRes = await fetch(metafieldsUrl, {
+      headers: {
+        "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_TOKEN,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const metafieldsData = await metafieldsRes.json();
+
+    const contentKeys = [
+      "fitness_content",
+      "performance_content",
+      "weightlifting_content",
+      "flow_content",
+      "hyrox_content",
+      "crossfit_content",
+    ];
+
+    const metafieldContent = (metafieldsData.metafields || [])
+      .filter((field) => contentKeys.includes(field.key))
+      .map((field) => richTextToHtml(field.value))
+      .filter(Boolean)
+      .join("\n");
+
+    const contentHtml = article.body_html || metafieldContent;
+
+    return res.json({
+      allowed: true,
+      article: {
+        title: article.title,
+        handle: article.handle,
+        body_html: contentHtml,
+        image: article.image?.src || null,
+        published_at: article.published_at,
+      },
+    });
+  } catch (error) {
+    console.error("WOD content error:", error);
+
+    return res.status(500).json({
+      allowed: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
 });
 
-app.post("/wod-content", async (req, res) => {
-  const { password, path } = req.body;
-
-  if (password !== process.env.WOD_PASSWORD) {
-    return res.status(401).json({ allowed: false });
-  }
-
-  const match = path.match(/^\/blogs\/([^/]+)\/([^/?#]+)/);
-
-  if (!match) {
-    return res.status(400).json({
-      allowed: false,
-      message: "Unsupported path",
-    });
-  }
-
-  const blogHandle = match[1];
-  const articleHandle = match[2];
-
-  const query = `
-    query GetArticle($query: String!) {
-      articles(first: 1, query: $query) {
-        edges {
-          node {
-            title
-            contentHtml
-            publishedAt
-            image {
-              url
-              altText
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const shopifyRes = await fetch(
-    `https://${process.env.SHOPIFY_STORE_DOMAIN}/api/2026-07/graphql.json`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Storefront-Access-Token":
-          process.env.SHOPIFY_STOREFRONT_TOKEN,
-      },
-      body: JSON.stringify({
-        query,
-        variables: {
-          query: `blog:${blogHandle} handle:${articleHandle}`,
-        },
-      }),
-    },
-  );
-
-  const data = await shopifyRes.json();
-  const article = data?.data?.articles?.edges?.[0]?.node;
-
-  if (!article) {
-    return res.status(404).json({
-      allowed: false,
-      message: "Article not found",
-      debug: data,
-    });
-  }
-
-  res.json({
-    allowed: true,
-    article,
-  });
+app.listen(port, () => {
+  console.log(`WOD auth server running on port ${port}`);
 });
