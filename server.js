@@ -86,7 +86,7 @@ const port = process.env.PORT || 3000;
 
 app.post("/wod-content", async (req, res) => {
   try {
-    const { password, handle } = req.body;
+    const { password, articleId } = req.body;
 
     if (password !== process.env.WOD_PASSWORD) {
       return res
@@ -97,7 +97,7 @@ app.post("/wod-content", async (req, res) => {
     const url =
       `https://${process.env.SHOPIFY_STORE_DOMAIN}` +
       `/admin/api/2026-01/blogs/${process.env.SHOPIFY_BLOG_ID}/articles.json` +
-      `?handle=${encodeURIComponent(handle)}`;
+      `?id=${encodeURIComponent(articleId)}`;
 
     console.log("Fetching Shopify URL:", url);
 
@@ -155,7 +155,7 @@ app.post("/wod-content", async (req, res) => {
       allowed: true,
       article: {
         title: article.title,
-        handle: article.handle,
+        id: article.id,
         body_html: contentHtml,
         image: article.image?.src || null,
         published_at: article.published_at,
