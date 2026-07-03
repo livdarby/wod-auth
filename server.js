@@ -96,8 +96,7 @@ app.post("/wod-content", async (req, res) => {
 
     const url =
       `https://${process.env.SHOPIFY_STORE_DOMAIN}` +
-      `/admin/api/2026-01/blogs/${process.env.SHOPIFY_BLOG_ID}/articles.json` +
-      `?id=${encodeURIComponent(articleId)}`;
+      `/admin/api/2026-01/blogs/${process.env.SHOPIFY_BLOG_ID}/articles/${articleId}.json`;
 
     console.log("Fetching Shopify URL:", url);
 
@@ -111,7 +110,7 @@ app.post("/wod-content", async (req, res) => {
     const data = await shopifyRes.json();
 
     console.log("Shopify response:", JSON.stringify(data, null, 2));
-    const article = data.articles?.[0];
+    const article = data.article;
 
     if (!article) {
       return res.status(404).json({
