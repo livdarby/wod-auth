@@ -172,7 +172,7 @@ app.post("/wod-content", async (req, res) => {
       article: {
         title: article.title,
         id: article.id,
-        // body_html: contentHtml,
+        body_html: article.body_html || '',
         image: article.image?.src || null,
         published_at: article.published_at,
         programs
