@@ -5,11 +5,29 @@ const cors = require("cors");
 
 const app = express();
 
+const allowedOrigins = [
+  "https://crossfitclaremont.myshopify.com",
+  "https://crossfitclaremont.com.au",
+  "https://www.crossfitclaremont.com.au",
+];
+
 app.use(express.json());
 
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGIN,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".shopifypreview.com");
+
+      if (isAllowed) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    },
   }),
 );
 
@@ -172,10 +190,10 @@ app.post("/wod-content", async (req, res) => {
       article: {
         title: article.title,
         id: article.id,
-        body_html: article.body_html || '',
+        body_html: article.body_html || "",
         image: article.image?.src || null,
         published_at: article.published_at,
-        programs
+        programs,
       },
     });
   } catch (error) {
