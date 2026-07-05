@@ -1,3 +1,5 @@
+const jwt = require("jsonwebtoken");
+
 require("dotenv").config();
 
 const express = require("express");
@@ -10,6 +12,20 @@ const allowedOrigins = [
   "https://crossfitclaremont.com.au",
   "https://www.crossfitclaremont.com.au",
 ];
+
+function createWodToken() {
+  return jwt.sign({ access: "wod" }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || "12h",
+  });
+}
+
+function verifyWodToken(token) {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
 
 app.use(express.json());
 
@@ -105,12 +121,27 @@ const port = process.env.PORT || 3000;
 app.post("/wod-content", async (req, res) => {
   try {
     const { password, articleId } = req.body;
+    const authHeader = req.headers.authorization || "";
+    const bearerToken = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
 
-    if (password !== process.env.WOD_PASSWORD) {
-      return res
-        .status(401)
-        .json({ allowed: false, message: "Incorrect password" });
+    const validToken = bearerToken && verifyWodToken(bearerToken);
+
+    if (!validToken) {
+      if (password !== process.env.WOD_PASSWORD) {
+        return res.status(401).json({
+          allowed: false,
+          message: "Incorrect password",
+        });
+      }
     }
+
+    // if (password !== process.env.WOD_PASSWORD) {
+    //   return res
+    //     .status(401)
+    //     .json({ allowed: false, message: "Incorrect password" });
+    // }
 
     const url =
       `https://${process.env.SHOPIFY_STORE_DOMAIN}` +
@@ -187,6 +218,7 @@ app.post("/wod-content", async (req, res) => {
 
     return res.json({
       allowed: true,
+      token: validToken ? bearerToken : createWodToken(),
       article: {
         title: article.title,
         id: article.id,
