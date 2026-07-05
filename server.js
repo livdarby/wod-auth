@@ -13,9 +13,32 @@ const allowedOrigins = [
   "https://www.crossfitclaremont.com.au",
 ];
 
+const articleCache = new Map();
+const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
+
 function createWodToken() {
   return jwt.sign({ access: "wod" }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || "12h",
+  });
+}
+
+function getCachedArticle(articleId) {
+  const cached = articleCache.get(String(articleId));
+
+  if (!cached) return null;
+
+  if (Date.now() > cached.expiresAt) {
+    articleCache.delete(String(articleId));
+    return null;
+  }
+
+  return cached.article;
+}
+
+function setCachedArticle(articleId, article) {
+  articleCache.set(String(articleId), {
+    article,
+    expiresAt: Date.now() + CACHE_TTL_MS,
   });
 }
 
@@ -149,6 +172,19 @@ app.post("/wod-content", async (req, res) => {
 
     console.log("Fetching Shopify URL:", url);
 
+    const cachedArticle = getCachedArticle(articleId);
+
+    if (cachedArticle) {
+      console.log("Using cached article");
+
+      return res.json({
+        allowed: true,
+        token: validToken ? bearerToken : createWodToken(),
+        article: cachedArticle,
+        cached: true,
+      });
+    }
+
     const shopifyRes = await fetch(url, {
       headers: {
         "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_TOKEN,
@@ -216,17 +252,22 @@ app.post("/wod-content", async (req, res) => {
 
     // const contentHtml = article.body_html || metafieldContent;
 
+    const responseArticle = {
+      id: article.id,
+      title: article.title,
+      body_html: article.body_html || "",
+      programs,
+      image: article.image?.src || null,
+      published_at: article.published_at,
+    };
+
+    setCachedArticle(articleId, responseArticle);
+
     return res.json({
       allowed: true,
       token: validToken ? bearerToken : createWodToken(),
-      article: {
-        title: article.title,
-        id: article.id,
-        body_html: article.body_html || "",
-        image: article.image?.src || null,
-        published_at: article.published_at,
-        programs,
-      },
+      article: responseArticle,
+      cached: false,
     });
   } catch (error) {
     console.error("WOD content error:", error);
